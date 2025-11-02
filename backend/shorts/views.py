@@ -6,6 +6,7 @@ import socket
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 from threading import Thread
 from typing import Any, TypedDict, cast
@@ -131,7 +132,10 @@ def process_short_video(short: ShortVideo, overlay_text: str) -> None:
 
         try:
             with YoutubeDL(ydl_opts) as ydl:
-                info = cast(dict[str, Any], ydl.extract_info(short.youtube_url, download=True))
+                raw_info = ydl.extract_info(short.youtube_url, download=True)
+                if raw_info is None or not isinstance(raw_info, Mapping):
+                    raise RuntimeError("Failed to retrieve metadata for the source video.")
+                info = cast(dict[str, Any], raw_info)
                 downloaded_path = Path(ydl.prepare_filename(info))
         except DownloadError as exc:
             raise RuntimeError(f"Failed to download source video: {exc}") from exc
@@ -160,7 +164,7 @@ def process_short_video(short: ShortVideo, overlay_text: str) -> None:
             "x=(w-text_w)/2:y=50:shadowcolor=black:shadowx=2:shadowy=2"
         )
 
-        # FFmpeg command
+        # FFmpeg command with a scale-and-crop pipeline to avoid black side bars (full 9:16 fill).
         ffmpeg_command = [
             ffmpeg_path,
             "-y",
@@ -168,10 +172,15 @@ def process_short_video(short: ShortVideo, overlay_text: str) -> None:
             "-i", str(downloaded_path),
             "-t", str(short.duration),
             "-c:v", "libx264",
-            "-preset", "veryfast",
+            "-preset", "medium",
+            "-crf", "18",
             "-c:a", "aac",
-            "-vf", f"scale=1080:1920:force_original_aspect_ratio=decrease,"
-                   f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1,{text_overlay}",
+            "-vf", (
+                "scale=1080:1920:force_original_aspect_ratio=increase,"
+                "crop=1080:1920,"
+                "setsar=1,"
+                f"{text_overlay}"
+            ),
             "-movflags", "+faststart",
             str(trimmed_path),
         ]

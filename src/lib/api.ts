@@ -2,6 +2,7 @@ import axios from "axios";
 import type { ShortGenerationPayload, ShortVideo } from "../types";
 
 const DEFAULT_GENERATE_PATH = "/api/shorts/generate/";
+const DEFAULT_PREVIEW_PATH = "/api/shorts/preview/";
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_POLL_INTERVAL_MS = 3_000;
 const DEFAULT_POLL_TIMEOUT_MS = 1_800_000;
@@ -98,6 +99,27 @@ export const generateShort = async (
   );
 
   const response = await apiClient.post<ShortVideo>(endpoint, payload);
+  return response.data;
+};
+
+export const fetchShortPreview = async (
+  payload: { youtube_url: string; start_time?: number }
+): Promise<{ image: string; width: number; height: number }> => {
+  const baseUrl = apiClient.defaults.baseURL ?? resolvedBaseUrl;
+  const endpoint = buildUrl(
+    baseUrl,
+    import.meta.env.VITE_PREVIEW_SHORTS_PATH ?? DEFAULT_PREVIEW_PATH
+  );
+
+  const response = await apiClient.post<{ image: string; width: number; height: number }>(
+    endpoint,
+    payload,
+    {
+      // Preview extraction can take longer than the standard request timeout when
+      // yt-dlp downloads the source clip, so disable the per-request timeout.
+      timeout: 0
+    }
+  );
   return response.data;
 };
 
